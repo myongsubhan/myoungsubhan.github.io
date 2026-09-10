@@ -5,8 +5,35 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>HAN MYOUNGSUB — Portfolio</title>
 </head>
-<body style="">
+<body>
 <title>Han Myoungsub</title>
+<script>
+/* 카카오톡 등 인앱 브라우저가 viewport meta를 무시하고 데스크톱 폭으로 렌더링하는 경우를 위한 보정.
+   실제 화면 폭(screen.width)보다 레이아웃 폭(clientWidth)이 훨씬 크면(=meta 무시됨으로 판단),
+   viewport meta를 강제로 다시 써서 실제 화면 폭에 맞춘다. */
+(function(){
+  try{
+    function fix(){
+      var sw=(window.screen&&screen.width)||0;
+      var lw=document.documentElement.clientWidth||window.innerWidth||0;
+      if(!sw||!lw)return;
+      if(lw>sw*1.2){
+        var mv=document.querySelector('meta[name="viewport"]');
+        if(!mv){
+          mv=document.createElement('meta');
+          mv.setAttribute('name','viewport');
+          (document.head||document.documentElement).appendChild(mv);
+        }
+        mv.setAttribute('content','width='+sw+',initial-scale=1,maximum-scale=1,viewport-fit=cover');
+      }
+    }
+    fix();
+    document.addEventListener('DOMContentLoaded',fix);
+    window.addEventListener('load',fix);
+    window.addEventListener('orientationchange',function(){setTimeout(fix,200);});
+  }catch(e){}
+})();
+</script>
 <style>
 /* ═══════════════════════════════════════════════════════
    TOKENS
@@ -29,7 +56,7 @@ body{
   font-size:12px;line-height:1.6;
   overflow-x:hidden;max-width:100%;width:100%;
 }
-img,canvas,video,svg{max-width:100%}
+.hero-bg-photo,.hero-bg-canvas{max-width:none}
 
 /* ═══════════════════════════════════════════════════════
    TOP NAVIGATION (골드윈 스타일)
