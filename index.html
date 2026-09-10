@@ -441,12 +441,28 @@ a:focus-visible,button:focus-visible{outline:1.5px solid #000;outline-offset:3px
   cursor:pointer;transition:background .2s,color .2s;font-family:inherit;
 }
 .fc-controls button:hover{background:var(--fg);color:#fff}
+/* 캔버스 자동 축소 뷰포트 — PC 배치를 그대로 유지한 채 화면 폭에 맞게 통째로 줄임 */
+.fc-viewport{
+  position:relative;width:100%;overflow:hidden;
+}
+/* 스페이서는 캔버스 아래에 깔려 스크롤 폭만 만들어 줌 */
+.fc-viewport>.fc-scroll-spacer{display:block}
 .free-canvas{
   position:relative;width:100%;min-height:520px;
   background:#fafaf9;border:1px dashed var(--rule);
   overflow:visible;
   padding-top:28px;
+  transform-origin:0 0;
 }
+/* 좁은 화면에서 과도하게 작아지지 않도록 가로 스크롤로 전환 */
+.fc-viewport.fc-scrollable{
+  overflow-x:auto;overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+}
+.fc-scroll-spacer{pointer-events:none;flex:none}
+/* 편집모드에서는 축소 해제 — 드래그 좌표가 어긋나지 않도록 */
+.free-canvas.edit-mode{transform:none!important;width:100%!important}
+.fc-viewport.edit-mode{overflow:auto;-webkit-overflow-scrolling:touch}
 .fc-empty-hint{
   position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
   font-size:11px;letter-spacing:.06em;color:#b4b0a8;text-align:center;padding:20px;
@@ -708,8 +724,10 @@ a:focus-visible,button:focus-visible{outline:1.5px solid #000;outline-offset:3px
       </div>
       <span class="fc-doc-status" id="fc-doc-status"></span>
     </div>
-    <div class="free-canvas" id="fc-work-main" data-canvas-id="fc-work-main">
-      <div class="fc-empty-hint">Edit 모드에서 사진 · 텍스트를 추가해 자유롭게 배치하세요</div>
+    <div class="fc-viewport">
+      <div class="free-canvas" id="fc-work-main" data-canvas-id="fc-work-main">
+        <div class="fc-empty-hint">Edit 모드에서 사진 · 텍스트를 추가해 자유롭게 배치하세요</div>
+      </div>
     </div>
   </div>
 
@@ -1195,7 +1213,13 @@ editBtn.addEventListener('click',function(){
     if(n)n.contentEditable=editMode?'true':'false';
     if(t)t.contentEditable=editMode?'true':'false';
   });
-  document.querySelectorAll('.free-canvas').forEach(function(c){c.classList.toggle('edit-mode',editMode);});
+  document.querySelectorAll('.free-canvas').forEach(function(c){
+    c.classList.toggle('edit-mode',editMode);
+    var vp=c.parentElement;
+    if(vp&&vp.classList.contains('fc-viewport'))vp.classList.toggle('edit-mode',editMode);
+  });
+  /* 편집 종료 시 다시 화면에 맞게 축소 */
+  if(typeof fcFitAllCanvases==='function')setTimeout(fcFitAllCanvases,50);
   document.querySelectorAll('.fc-controls').forEach(function(c){c.classList.toggle('visible',editMode);});
   document.querySelectorAll('.fc-doc-row').forEach(function(c){c.classList.toggle('visible',editMode);});
   document.querySelectorAll('.fc-text').forEach(function(t){t.contentEditable=editMode?'true':'false';});
@@ -1615,11 +1639,108 @@ function fcLoadCanvas(canvas){
   });
 }
 
+/* ── 캔버스 자동 축소 (모든 기기에서 PC와 동일한 배치 유지) ────────── */
+/* 블록들의 실제 최대 x/y를 재서 콘텐츠 폭을 구하고,
+   화면 폭보다 넓으면 transform:scale로 통째로 줄인다.
+   → 아이폰 사파리/안드로이드/PC 모두 동일한 비율의 레이아웃이 나옴. */
+function fcFitCanvas(canvas){
+  if(!canvas)return;
+  var viewport=canvas.parentElement;
+  if(!viewport||!viewport.classList.contains('fc-viewport'))return;
+
+  /* 편집모드에서는 원본 크기 유지 (드래그 좌표 어긋남 방지) */
+  if(canvas.classList.contains('edit-mode')){
+    canvas.style.transform='';
+    canvas.style.width='';
+    viewport.style.height='';
+    return;
+  }
+
+  var blocks=canvas.querySelectorAll('.fc-block');
+  var maxX=0,maxY=0;
+  blocks.forEach(function(b){
+    var x=parseFloat(b.style.left)||0;
+    var y=parseFloat(b.style.top)||0;
+    var w=parseFloat(b.style.width)||0;
+    var h=parseFloat(b.style.height)||0;
+    if(x+w>maxX)maxX=x+w;
+    if(y+h>maxY)maxY=y+h;
+  });
+
+  /* 블록이 없으면 기본 상태 */
+  if(!blocks.length||maxX<=0){
+    canvas.style.transform='';
+    canvas.style.width='';
+    viewport.style.height='';
+    return;
+  }
+
+  var contentW=maxX+24;                        /* 우측 여백 */
+  var contentH=Math.max(maxY+24+28,520);       /* 하단 여백 + padding-top */
+  var availW=viewport.clientWidth;
+  if(!availW)return;
+
+  /* 콘텐츠가 화면보다 넓을 때만 축소 (넓은 PC에서는 확대하지 않음) */
+  var scale=Math.min(1,availW/contentW);
+
+  /* 너무 작아지면 사진이 우표만 해지므로, 하한선 아래로는 축소하지 않고
+     대신 가로 스크롤로 넘겨서 원래 배치를 크게 볼 수 있게 함.
+     MIN_SCALE 기준: 축소 후 캔버스 높이가 최소 320px은 되도록 */
+  var MIN_H=320;
+  if(contentH*scale<MIN_H){
+    scale=Math.min(1,MIN_H/contentH);
+  }
+
+  var scaledW=contentW*scale;
+  var needScroll=scaledW>availW+1;
+
+  canvas.style.width=contentW+'px';
+  canvas.style.minHeight=contentH+'px';
+  canvas.style.transform='scale('+scale+')';
+  /* 축소된 만큼 뷰포트 높이도 줄여서 아래 빈 공간이 생기지 않게 함 */
+  viewport.style.height=(contentH*scale)+'px';
+
+  /* 가로 스크롤 필요 여부 */
+  viewport.classList.toggle('fc-scrollable',needScroll);
+  if(needScroll){
+    /* 스크롤 가능한 실제 너비를 만들기 위한 스페이서 */
+    var spacer=viewport.querySelector('.fc-scroll-spacer');
+    if(!spacer){
+      spacer=document.createElement('div');
+      spacer.className='fc-scroll-spacer';
+      viewport.appendChild(spacer);
+    }
+    spacer.style.width=scaledW+'px';
+    spacer.style.height='1px';
+  }else{
+    var sp=viewport.querySelector('.fc-scroll-spacer');
+    if(sp)sp.remove();
+  }
+}
+
+function fcFitAllCanvases(){
+  document.querySelectorAll('.free-canvas').forEach(fcFitCanvas);
+}
+
 function fcInitCanvases(){
   document.querySelectorAll('.free-canvas').forEach(function(canvas){
     fcLoadCanvas(canvas);
   });
+  /* 이미지 로드 후 재계산 */
+  setTimeout(fcFitAllCanvases,150);
+  setTimeout(fcFitAllCanvases,600);
+  setTimeout(fcFitAllCanvases,1500);
 }
+
+/* 화면 회전 / 리사이즈 대응 */
+window.addEventListener('resize',function(){
+  clearTimeout(window._fcFitTimer);
+  window._fcFitTimer=setTimeout(fcFitAllCanvases,120);
+});
+window.addEventListener('orientationchange',function(){
+  setTimeout(fcFitAllCanvases,250);
+});
+window.addEventListener('load',function(){setTimeout(fcFitAllCanvases,200);});
 
 function fcNextPos(canvas){
   var n=canvas.querySelectorAll('.fc-block').length;
@@ -1899,6 +2020,11 @@ function showSection(sectionId, scrollId){
   var target=document.getElementById(sectionId);
   if(!target)return;
   target.classList.add('active');
+  /* 섹션이 보이게 된 후 캔버스 크기 재계산 (숨겨져 있을 땐 폭이 0이라 계산 불가) */
+  if(typeof fcFitAllCanvases==='function'){
+    setTimeout(fcFitAllCanvases,30);
+    setTimeout(fcFitAllCanvases,300);
+  }
   /* 스크롤 초기화 */
   window.scrollTo(0,0);
   /* 서브 타겟 스크롤 */
