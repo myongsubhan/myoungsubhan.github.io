@@ -22,12 +22,14 @@
    RESET + BASE
 ═══════════════════════════════════════════════════════ */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth}
+html{scroll-behavior:smooth;overflow-x:hidden;max-width:100%}
 body{
   background:#fff;color:#000;
   font-family:Helvetica,'Helvetica Neue','Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',-apple-system,Arial,sans-serif;
   font-size:12px;line-height:1.6;
+  overflow-x:hidden;max-width:100%;width:100%;
 }
+img,canvas,video,svg{max-width:100%}
 
 /* ═══════════════════════════════════════════════════════
    TOP NAVIGATION (골드윈 스타일)
